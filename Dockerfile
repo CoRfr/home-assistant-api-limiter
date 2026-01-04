@@ -33,6 +33,9 @@ COPY --from=builder --chown=appuser:appuser /app/.venv /app/.venv
 # Copy application code
 COPY --from=builder --chown=appuser:appuser /app/ha_api_limiter ./ha_api_limiter/
 
+# Copy default config template
+COPY --chown=appuser:appuser config.yaml ./config.yaml
+
 # Create config directory
 RUN mkdir -p /config && chown -R appuser:appuser /config /app
 
