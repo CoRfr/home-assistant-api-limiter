@@ -1,8 +1,11 @@
 """Configuration management for HA API Limiter."""
 
 import fnmatch
+import os
 import re
 import shutil
+import tempfile
+import threading
 from enum import Enum
 from pathlib import Path
 from typing import Any
@@ -46,6 +49,7 @@ class WhitelistConfig:
         self.devices: list[str] = []
         self.areas: list[str] = []
         self._endpoint_patterns: list[re.Pattern] = []
+        self._save_lock = threading.Lock()
         # Advanced WebSocket security overrides
         self.allowed_ws_types: list[str] = []
         self.allowed_event_types: list[str] = []
@@ -68,56 +72,71 @@ class WhitelistConfig:
             self._compile_endpoint_patterns()
 
     def save(self) -> None:
-        """Save current whitelist to config file, preserving comments."""
+        """Save current whitelist to config file, preserving comments.
+
+        Uses atomic writes and a lock to prevent corruption from concurrent saves.
+        """
         if not self.config_path:
             return
 
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
+        with self._save_lock:
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
 
-        ruamel = YAML()
-        ruamel.preserve_quotes = True
-        ruamel.indent(mapping=2, sequence=2, offset=2)
+            ruamel = YAML()
+            ruamel.preserve_quotes = True
+            ruamel.indent(mapping=2, sequence=2, offset=2)
 
-        # If config doesn't exist, copy base config.yaml as template
-        if not self.config_path.exists() and BASE_CONFIG_PATH.exists():
-            shutil.copy(BASE_CONFIG_PATH, self.config_path)
+            # If config doesn't exist, copy base config.yaml as template
+            if not self.config_path.exists() and BASE_CONFIG_PATH.exists():
+                shutil.copy(BASE_CONFIG_PATH, self.config_path)
 
-        # Load existing file to preserve comments and structure
-        if self.config_path.exists():
-            with open(self.config_path) as f:
-                data = ruamel.load(f)
-            if data is None:
-                data = {}
-        else:
-            data = {}
-
-        # Helper to append items to a list, creating if needed
-        def append_items(key: str, items: list[str]) -> None:
-            existing = list(data.get(key) or [])
-            new_items = [item for item in items if item not in existing]
-            if not new_items:
-                return
-
-            if key in data:
-                if isinstance(data[key], CommentedSeq):
-                    # Append to existing CommentedSeq to preserve structure
-                    for item in sorted(new_items):
-                        data[key].append(item)
-                else:
-                    # Convert empty list to CommentedSeq and append in place
-                    seq = CommentedSeq(existing + sorted(new_items))
-                    data[key] = seq
+            # Load existing file to preserve comments and structure
+            if self.config_path.exists():
+                with open(self.config_path) as f:
+                    data = ruamel.load(f)
+                if data is None:
+                    data = {}
             else:
-                # Key doesn't exist, create new list
-                data[key] = existing + sorted(new_items)
+                data = {}
 
-        append_items("endpoints", self.endpoints)
-        append_items("entities", self.entities)
-        append_items("devices", self.devices)
-        append_items("areas", self.areas)
+            # Helper to append items to a list, creating if needed
+            def append_items(key: str, items: list[str]) -> None:
+                existing = list(data.get(key) or [])
+                new_items = [item for item in items if item not in existing]
+                if not new_items:
+                    return
 
-        with open(self.config_path, "w") as f:
-            ruamel.dump(data, f)
+                if key in data:
+                    if isinstance(data[key], CommentedSeq):
+                        # Append to existing CommentedSeq to preserve structure
+                        for item in sorted(new_items):
+                            data[key].append(item)
+                    else:
+                        # Convert empty list to CommentedSeq and append in place
+                        seq = CommentedSeq(existing + sorted(new_items))
+                        data[key] = seq
+                else:
+                    # Key doesn't exist, create new list
+                    data[key] = existing + sorted(new_items)
+
+            append_items("endpoints", self.endpoints)
+            append_items("entities", self.entities)
+            append_items("devices", self.devices)
+            append_items("areas", self.areas)
+
+            # Atomic write: write to temp file, then rename
+            parent_dir = self.config_path.parent
+            fd, tmp_path = tempfile.mkstemp(suffix=".yaml", prefix=".config_", dir=parent_dir)
+            try:
+                with os.fdopen(fd, "w") as f:
+                    ruamel.dump(data, f)
+                # Atomic rename (on POSIX systems)
+                os.replace(tmp_path, self.config_path)
+            except Exception:
+                # Clean up temp file on failure
+                if os.path.exists(tmp_path):
+                    os.unlink(tmp_path)
+                raise
 
     def _compile_endpoint_patterns(self) -> None:
         """Compile endpoint patterns to regex for matching."""
