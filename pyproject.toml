@@ -1,0 +1,31 @@
+[tool.poetry]
+name = "ha-api-limiter"
+version = "0.1.0"
+description = "A MITM proxy for Home Assistant that limits accessible endpoints and sensors"
+authors = ["Your Name <your.email@example.com>"]
+readme = "README.md"
+packages = [{include = "ha_api_limiter"}]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+fastapi = "^0.115.0"
+uvicorn = {extras = ["standard"], version = "^0.34.0"}
+httpx = "^0.28.0"
+pyyaml = "^6.0.2"
+pydantic-settings = "^2.7.0"
+
+[tool.poetry.group.dev.dependencies]
+pre-commit = "^4.0.0"
+black = "^25.1.0"
+flake8 = "^7.2.0"
+
+[tool.poetry.scripts]
+ha-api-limiter = "ha_api_limiter.main:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
+
+[tool.black]
+line-length = 100
+target-version = ["py311", "py312"]

@@ -1,0 +1,23 @@
+# Home Assistant API Limiter - Whitelist Configuration
+#
+# This file defines which endpoints and entities are accessible through the proxy.
+# In 'learn' mode, this file is automatically populated.
+# In 'limit' mode, only whitelisted endpoints/entities are allowed.
+
+# Whitelisted endpoint patterns
+# Use {param} for path parameters
+endpoints:
+  - /api/
+  - /api/states
+  - /api/states/{entity_id}
+  - /api/services/{domain}/{service}
+  - /api/config
+
+# Whitelisted entity IDs
+# Supports wildcards using fnmatch patterns (*, ?)
+entities:
+  # Examples:
+  # - sensor.temperature_living_room
+  # - switch.bedroom_light
+  # - light.*           # All light entities
+  # - sensor.weather_*  # All weather sensors
