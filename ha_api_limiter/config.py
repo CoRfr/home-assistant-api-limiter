@@ -44,8 +44,9 @@ class WhitelistConfig:
         if self.config_path and self.config_path.exists():
             with open(self.config_path) as f:
                 data = yaml.safe_load(f) or {}
-            self.endpoints = data.get("endpoints", [])
-            self.entities = data.get("entities", [])
+            # Ensure we always have lists, even if YAML has null values
+            self.endpoints = data.get("endpoints") or []
+            self.entities = data.get("entities") or []
             self._compile_endpoint_patterns()
 
     def save(self) -> None:
@@ -54,8 +55,8 @@ class WhitelistConfig:
             return
 
         data = {
-            "endpoints": sorted(set(self.endpoints)),
-            "entities": sorted(set(self.entities)),
+            "endpoints": sorted(set(self.endpoints or [])),
+            "entities": sorted(set(self.entities or [])),
         }
 
         self.config_path.parent.mkdir(parents=True, exist_ok=True)
@@ -73,11 +74,15 @@ class WhitelistConfig:
 
     def add_endpoint(self, endpoint: str) -> bool:
         """Add an endpoint to the whitelist. Returns True if newly added."""
-        if endpoint not in self.endpoints:
-            self.endpoints.append(endpoint)
-            self._compile_endpoint_patterns()
-            return True
-        return False
+        # Skip if already in list
+        if endpoint in self.endpoints:
+            return False
+        # Skip if already covered by an existing pattern (e.g., wildcard)
+        if self.is_endpoint_allowed(endpoint):
+            return False
+        self.endpoints.append(endpoint)
+        self._compile_endpoint_patterns()
+        return True
 
     def add_entity(self, entity_id: str) -> bool:
         """Add an entity to the whitelist. Returns True if newly added."""

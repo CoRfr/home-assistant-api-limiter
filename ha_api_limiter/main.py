@@ -3,10 +3,11 @@
 import argparse
 import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import AsyncGenerator
 
 import uvicorn
-from fastapi import FastAPI, Request, Response
+from fastapi import FastAPI, Request, Response, WebSocket
 
 from .config import Mode, Settings, WhitelistConfig, settings
 from .learner import Learner
@@ -42,11 +43,13 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     if settings.mode == Mode.LEARN:
         logger.info("Starting in LEARN mode - tracking accessed endpoints/entities")
+        # Always load existing whitelist to extend it
+        whitelist.load()
+        logger.info(
+            f"Loaded existing whitelist: {len(whitelist.endpoints)} endpoints, "
+            f"{len(whitelist.entities)} entities"
+        )
         learner = Learner(whitelist)
-        # Load existing whitelist if present (to append to it)
-        if settings.config_path.exists():
-            whitelist.load()
-            logger.info(f"Loaded existing whitelist from {settings.config_path}")
     else:
         logger.info("Starting in LIMIT mode - enforcing whitelist restrictions")
         whitelist.load()
@@ -83,6 +86,20 @@ async def health_check() -> dict:
         "mode": settings.mode.value,
         "ha_url": settings.ha_url,
     }
+
+
+@app.websocket("/api/websocket")
+async def websocket_proxy(websocket: WebSocket) -> None:
+    """WebSocket proxy endpoint for Home Assistant."""
+    if proxy is None:
+        await websocket.close(code=1011, reason="Proxy not initialized")
+        return
+
+    # In learn mode, track the websocket endpoint
+    if learner:
+        learner.learn_from_request("/api/websocket", "")
+
+    await proxy.forward_websocket(websocket, "/api/websocket")
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
@@ -167,7 +184,7 @@ def main() -> None:
     if args.mode:
         overrides["mode"] = Mode(args.mode)
     if args.config_path:
-        overrides["config_path"] = args.config_path
+        overrides["config_path"] = Path(args.config_path)
     if args.port:
         overrides["port"] = args.port
     if args.host:

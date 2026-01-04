@@ -29,3 +29,4 @@ poetry.lock
 # Config (may contain sensitive entity names)
 # Uncomment if you want to exclude config from git:
 # config.yaml
+config.*.yaml

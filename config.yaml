@@ -1,12 +1,18 @@
 # Home Assistant API Limiter - Whitelist Configuration
 #
-# This file defines which endpoints and entities are accessible through the proxy.
-# In 'learn' mode, this file is automatically populated.
-# In 'limit' mode, only whitelisted endpoints/entities are allowed.
+# Wildcards: Use * for matching any characters (e.g., /static/* matches all static files)
+# Parameters: Use {param} for path parameters (e.g., /api/states/{entity_id})
 
-# Whitelisted endpoint patterns
-# Use {param} for path parameters
 endpoints:
+  # Static assets - allow all
+  - /frontend_latest/*
+  - /static/*
+  - /hacsfiles/*
+  - /local/*
+  # Common files
+  - /manifest.json
+  - /favicon.ico
+  # API endpoints
   - /api/
   - /api/states
   - /api/states/{entity_id}

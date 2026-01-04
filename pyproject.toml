@@ -13,6 +13,7 @@ uvicorn = {extras = ["standard"], version = "^0.34.0"}
 httpx = "^0.28.0"
 pyyaml = "^6.0.2"
 pydantic-settings = "^2.7.0"
+brotli = "^1.2.0"
 
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^4.0.0"
