@@ -1,5 +1,9 @@
 # Home Assistant API Limiter
 
+[![CI](https://github.com/CoRfr/home-assistant-api-limiter/actions/workflows/ci.yml/badge.svg)](https://github.com/CoRfr/home-assistant-api-limiter/actions/workflows/ci.yml)
+[![Docker](https://github.com/CoRfr/home-assistant-api-limiter/actions/workflows/docker.yml/badge.svg)](https://github.com/CoRfr/home-assistant-api-limiter/actions/workflows/docker.yml)
+[![codecov](https://codecov.io/gh/CoRfr/home-assistant-api-limiter/branch/main/graph/badge.svg)](https://codecov.io/gh/CoRfr/home-assistant-api-limiter)
+
 A MITM proxy for Home Assistant that limits accessible API endpoints and entity sensors.
 
 ## Overview

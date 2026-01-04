@@ -30,3 +30,5 @@ poetry.lock
 # Uncomment if you want to exclude config from git:
 # config.yaml
 config.*.yaml
+
+.coverage

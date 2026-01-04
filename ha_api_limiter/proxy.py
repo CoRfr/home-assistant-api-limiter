@@ -1,7 +1,10 @@
 """HTTP proxy module for forwarding requests to Home Assistant."""
 
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import TYPE_CHECKING
 from urllib.parse import urlparse
 
 import httpx
@@ -9,6 +12,10 @@ import websockets
 from fastapi import Request, Response, WebSocket, WebSocketDisconnect
 
 from .config import settings
+
+if TYPE_CHECKING:
+    from .learner import Learner
+    from .ws_filter import WebSocketFilter
 
 logger = logging.getLogger(__name__)
 
@@ -108,13 +115,21 @@ class HAProxy:
         ws_scheme = "wss" if parsed.scheme == "https" else "ws"
         return f"{ws_scheme}://{parsed.netloc}{path}"
 
-    async def forward_websocket(self, websocket: WebSocket, path: str) -> None:
+    async def forward_websocket(
+        self,
+        websocket: WebSocket,
+        path: str,
+        ws_filter: WebSocketFilter | None = None,
+        ws_learner: Learner | None = None,
+    ) -> None:
         """
         Forward a WebSocket connection to Home Assistant.
 
         Args:
             websocket: The incoming FastAPI WebSocket connection
             path: The WebSocket path (e.g., /api/websocket)
+            ws_filter: Optional filter for message filtering in limit mode
+            ws_learner: Optional learner for entity discovery in learn mode
         """
         await websocket.accept()
 
@@ -122,15 +137,46 @@ class HAProxy:
         logger.info(f"Connecting to upstream WebSocket: {ws_url}")
 
         try:
-            async with websockets.connect(ws_url) as upstream_ws:
+            async with websockets.connect(ws_url, max_size=10 * 1024 * 1024) as upstream_ws:
                 logger.info(f"WebSocket connected to {ws_url}")
 
                 async def client_to_upstream():
                     """Forward messages from client to upstream."""
                     try:
                         while True:
-                            data = await websocket.receive_text()
-                            await upstream_ws.send(data)
+                            # Use receive() to handle both text and binary
+                            msg = await websocket.receive()
+
+                            if msg["type"] == "websocket.receive":
+                                if "text" in msg:
+                                    data = msg["text"]
+
+                                    # Learn from client messages in learn mode
+                                    if ws_learner:
+                                        ws_learner.learn_from_websocket_message(data)
+
+                                    # Apply filter if present
+                                    if ws_filter:
+                                        allowed, error_response = ws_filter.filter_client_message(
+                                            data
+                                        )
+                                        if not allowed:
+                                            # Send error response back to client
+                                            if error_response:
+                                                await websocket.send_text(error_response)
+                                            continue
+
+                                    await upstream_ws.send(data)
+                                elif "bytes" in msg:
+                                    # Binary - block in limit mode (can't inspect)
+                                    if ws_filter:
+                                        logger.warning(
+                                            "Blocked binary WebSocket message from client"
+                                        )
+                                        continue
+                                    await upstream_ws.send(msg["bytes"])
+                            elif msg["type"] == "websocket.disconnect":
+                                break
                     except WebSocketDisconnect:
                         logger.info("Client WebSocket disconnected")
                     except Exception as e:
@@ -141,8 +187,23 @@ class HAProxy:
                     try:
                         async for message in upstream_ws:
                             if isinstance(message, str):
+                                # Learn from server messages in learn mode
+                                if ws_learner:
+                                    ws_learner.learn_from_websocket_message(message)
+
+                                # Apply filter if present
+                                if ws_filter:
+                                    filtered = ws_filter.filter_server_message(message)
+                                    if filtered is None:
+                                        continue
+                                    message = filtered
+
                                 await websocket.send_text(message)
                             else:
+                                # Binary messages - block in limit mode (can't inspect content)
+                                if ws_filter:
+                                    logger.warning("Blocked binary WebSocket message from upstream")
+                                    continue
                                 await websocket.send_bytes(message)
                     except Exception as e:
                         logger.debug(f"Upstream to client error: {e}")

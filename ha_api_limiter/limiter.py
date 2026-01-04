@@ -3,6 +3,7 @@
 import logging
 import re
 from dataclasses import dataclass
+from urllib.parse import parse_qs
 
 from .config import WhitelistConfig
 
@@ -37,13 +38,34 @@ class Limiter:
 
         return None
 
-    def check_request(self, path: str, method: str = "GET") -> CheckResult:
+    def _extract_entities_from_query(self, path: str, query: str) -> list[str]:
+        """Extract entity IDs from query parameters for specific endpoints."""
+        entities = []
+
+        # /api/history/period/* - check filter_entity_id param
+        if path.startswith("/api/history/period/"):
+            params = parse_qs(query)
+            filter_entities = params.get("filter_entity_id", [])
+            for entity_list in filter_entities:
+                # Can be comma-separated
+                entities.extend(e.strip() for e in entity_list.split(",") if e.strip())
+
+        # /api/logbook/* - check entity param
+        elif path.startswith("/api/logbook/"):
+            params = parse_qs(query)
+            entity_params = params.get("entity", [])
+            entities.extend(entity_params)
+
+        return entities
+
+    def check_request(self, path: str, method: str = "GET", query: str = "") -> CheckResult:
         """
         Check if a request is allowed by the whitelist.
 
         Args:
             path: The request path (e.g., /api/states/sensor.temp)
             method: HTTP method (currently not used for filtering)
+            query: Query string (e.g., filter_entity_id=sensor.temp)
 
         Returns:
             CheckResult indicating if allowed and why
@@ -65,6 +87,16 @@ class Limiter:
         if entity_id:
             if not self.whitelist.is_entity_allowed(entity_id):
                 logger.warning(f"Blocked entity: {entity_id}")
+                return CheckResult(
+                    allowed=False,
+                    reason=f"Entity not in whitelist: {entity_id}",
+                )
+
+        # For endpoints with entity filtering in query params
+        query_entities = self._extract_entities_from_query(path, query)
+        for entity_id in query_entities:
+            if not self.whitelist.is_entity_allowed(entity_id):
+                logger.warning(f"Blocked entity in query: {entity_id}")
                 return CheckResult(
                     allowed=False,
                     reason=f"Entity not in whitelist: {entity_id}",

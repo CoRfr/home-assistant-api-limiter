@@ -4,26 +4,115 @@
 # Parameters: Use {param} for path parameters (e.g., /api/states/{entity_id})
 
 endpoints:
-  # Static assets - allow all
+  # Root and dashboard
+  - /
+  - /lovelace
+  - /lovelace/*
+
+  # Authentication (required for login)
+  - /auth/authorize
+  - /auth/login_flow
+  - /auth/login_flow/*
+  - /auth/providers
+  - /auth/token
+
+  # WebSocket API (required for real-time updates)
+  - /api/websocket
+
+  # REST API endpoints
+  - /api/
+  - /api/config
+  - /api/states
+  - /api/states/{entity_id}
+  - /api/services/{domain}/{service}
+  - /api/history/period/*
+  - /api/logbook/*
+  - /api/calendars
+  - /api/calendars/*
+
+  # Static assets
   - /frontend_latest/*
   - /static/*
   - /hacsfiles/*
   - /local/*
+
   # Common files
   - /manifest.json
   - /favicon.ico
-  # API endpoints
-  - /api/
-  - /api/states
-  - /api/states/{entity_id}
-  - /api/services/{domain}/{service}
-  - /api/config
+  - /sw-modern.js
 
 # Whitelisted entity IDs
 # Supports wildcards using fnmatch patterns (*, ?)
-entities:
-  # Examples:
-  # - sensor.temperature_living_room
-  # - switch.bedroom_light
-  # - light.*           # All light entities
-  # - sensor.weather_*  # All weather sensors
+#
+# These control:
+# - Which entities can be accessed via /api/states/{entity_id}
+# - Which service calls are allowed (based on target entity_id)
+# - Which state_changed events are forwarded via WebSocket
+#
+# Examples:
+# - sensor.temperature_living_room
+# - switch.bedroom_light
+# - light.*           # All light entities
+# - sensor.weather_*  # All weather sensors
+# - binary_sensor.*   # All binary sensors
+entities: []
+
+# Whitelisted device IDs
+# Device IDs can be found in Home Assistant's device registry
+# Supports wildcards using fnmatch patterns (*, ?)
+#
+# Examples:
+# - abc123def456...   # Specific device ID
+# - *                 # All devices (not recommended)
+devices: []
+
+# Whitelisted area IDs
+# Area IDs can be found in Home Assistant's area registry
+# Supports wildcards using fnmatch patterns (*, ?)
+#
+# Examples:
+# - living_room       # Specific area ID
+# - bedroom_*         # All bedroom areas
+areas: []
+
+# =============================================================================
+# ADVANCED: WebSocket Security Overrides
+# =============================================================================
+# These settings allow you to enable normally-blocked WebSocket features.
+# USE WITH CAUTION - these can expose sensitive data or allow unintended control.
+
+# Allowed WebSocket message types (normally blocked for security)
+# These message types are blocked by default because they can bypass entity restrictions:
+# - render_template: Can read ANY entity state via Jinja templates
+# - fire_event: Can trigger automations indirectly
+# - execute_script: Can execute arbitrary scripts
+# - subscribe_trigger: Can subscribe to triggers for any entity
+#
+# Only add these if you understand the security implications!
+#
+# Examples:
+# - render_template   # Allow template rendering (exposes all entity states!)
+# - fire_event        # Allow firing custom events
+allowed_ws_types: []
+
+# Allowed WebSocket event types for subscribe_events
+# By default, only safe event types are allowed. Add custom event types here.
+#
+# Examples:
+# - automation_triggered
+# - script_started
+allowed_event_types: []
+
+# Allowed services that are normally blocked
+# Format: "domain.service" (e.g., "automation.trigger")
+#
+# Blocked by default for security:
+# - homeassistant.restart/stop
+# - automation.* (can affect non-whitelisted entities)
+# - script.* (can run arbitrary scripts)
+# - shell_command.*, python_script.*, notify.*
+#
+# Examples:
+# - automation.trigger   # Allow triggering automations
+# - script.my_safe_script
+allowed_services: []

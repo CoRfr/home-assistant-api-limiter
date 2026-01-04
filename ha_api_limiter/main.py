@@ -13,6 +13,7 @@ from .config import Mode, Settings, WhitelistConfig, settings
 from .learner import Learner
 from .limiter import Limiter
 from .proxy import HAProxy
+from .ws_filter import WebSocketFilter
 
 # Configure logging
 logging.basicConfig(
@@ -26,12 +27,13 @@ proxy: HAProxy | None = None
 whitelist: WhitelistConfig | None = None
 learner: Learner | None = None
 limiter: Limiter | None = None
+ws_filter: WebSocketFilter | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Application lifespan handler for startup and shutdown."""
-    global proxy, whitelist, learner, limiter
+    global proxy, whitelist, learner, limiter, ws_filter
 
     # Initialize proxy
     proxy = HAProxy(settings.ha_url)
@@ -47,16 +49,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         whitelist.load()
         logger.info(
             f"Loaded existing whitelist: {len(whitelist.endpoints)} endpoints, "
-            f"{len(whitelist.entities)} entities"
+            f"{len(whitelist.entities)} entities, "
+            f"{len(whitelist.devices)} devices, "
+            f"{len(whitelist.areas)} areas"
         )
         learner = Learner(whitelist)
     else:
         logger.info("Starting in LIMIT mode - enforcing whitelist restrictions")
         whitelist.load()
         limiter = Limiter(whitelist)
+        ws_filter = WebSocketFilter(whitelist)
         logger.info(
             f"Loaded whitelist: {len(whitelist.endpoints)} endpoints, "
-            f"{len(whitelist.entities)} entities"
+            f"{len(whitelist.entities)} entities, "
+            f"{len(whitelist.devices)} devices, "
+            f"{len(whitelist.areas)} areas"
         )
 
     yield
@@ -99,7 +106,9 @@ async def websocket_proxy(websocket: WebSocket) -> None:
     if learner:
         learner.learn_from_request("/api/websocket", "")
 
-    await proxy.forward_websocket(websocket, "/api/websocket")
+    await proxy.forward_websocket(
+        websocket, "/api/websocket", ws_filter=ws_filter, ws_learner=learner
+    )
 
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"])
@@ -109,7 +118,7 @@ async def proxy_request(request: Request, path: str) -> Response:
 
     # In limit mode, check whitelist first
     if limiter:
-        result = limiter.check_request(full_path, request.method)
+        result = limiter.check_request(full_path, request.method, request.url.query or "")
         if not result.allowed:
             return Response(
                 content=f'{{"error": "{result.reason}"}}',
